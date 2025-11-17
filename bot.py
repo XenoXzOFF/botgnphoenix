@@ -7,6 +7,7 @@ from datetime import datetime
 import threading
 from flask import Flask, render_template, request, redirect, url_for
 import asyncio
+from flask import session, flash
 
 # --- Configuration ---
 # Remplace par ton vrai token dans un fichier de configuration ou une variable d'environnement
@@ -16,6 +17,7 @@ GUILD_ID = 123456789012345678 # ID de ton serveur Discord (clic droit sur le ser
 
 # --- Configuration du Dashboard Web ---
 app = Flask(__name__)
+app.secret_key = os.urandom(24) # Clé secrète pour la gestion des sessions
 
 # Pour simplifier, pas de système de login complexe ici.
 # Dans un vrai projet, il faudrait un système d'authentification sécurisé (ex: Flask-Login).
@@ -27,6 +29,7 @@ def get_db_connection():
     return conn
 
 @app.route('/')
+@login_required
 def index():
     conn = get_db_connection()
     casiers = conn.execute('SELECT * FROM casiers ORDER BY id DESC').fetchall()
@@ -34,16 +37,45 @@ def index():
     conn.close()
     return render_template('index.html', casiers=casiers, gendarmes=gendarmes)
 
+@app.route('/config', methods=['GET', 'POST'])
+@login_required
+def config():
+    conn = get_db_connection()
+    if request.method == 'POST':
+        # Enregistre les nouvelles valeurs
+        gendarme_role_id = request.form.get('gendarme_role_id')
+        casier_log_channel_id = request.form.get('casier_log_channel_id')
+        
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('gendarme_role_id', gendarme_role_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('casier_log_channel_id', casier_log_channel_id))
+        conn.commit()
+        flash("Configuration enregistrée avec succès !", "success")
+        return redirect(url_for('config'))
+
+    # Affiche les valeurs actuelles
+    config_data = {row['key']: row['value'] for row in conn.execute('SELECT * FROM config').fetchall()}
+    conn.close()
+    return render_template('config.html', config=config_data)
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     # Ceci est une sécurité très basique, à ne PAS utiliser en production !
     if request.method == 'POST':
         if request.form.get('password') == ADMIN_PASSWORD:
-            # Dans une vraie app, on utiliserait une session
+            session['logged_in'] = True
+            flash("Connexion réussie !", "success")
             return redirect(url_for('index'))
         else:
-            return "Mot de passe incorrect", 403
+            flash("Mot de passe incorrect.", "danger")
+            return redirect(url_for('login'))
     return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    flash("Vous avez été déconnecté.", "info")
+    return redirect(url_for('login'))
 
 # --- Initialisation de la base de données ---
 def init_db():
@@ -73,6 +105,14 @@ def init_db():
         user_id INTEGER PRIMARY KEY,
         nigend TEXT NOT NULL UNIQUE,
         specialites TEXT
+    )
+    ''')
+
+    # Table pour la configuration du bot
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS config (
+        key TEXT PRIMARY KEY,
+        value TEXT
     )
     ''')
     
@@ -149,7 +189,21 @@ casier_group = app_commands.Group(name="casier", description="Gestion des casier
     profession="Profession de la personne."
 )
 async def creer_casier(interaction: discord.Interaction, prenom: str, nom: str, date_faits: str, infractions: str, statut_judiciaire: str, age: int = None, date_naissance: str = None, telephone: str = None, profession: str = None):
-    # On pourrait ajouter une vérification de rôle ici pour s'assurer que seuls les gendarmes peuvent le faire
+    # --- Vérification du rôle Gendarme ---
+    conn_check = get_db_connection()
+    gendarme_role_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'gendarme_role_id'").fetchone()
+    conn_check.close()
+
+    if gendarme_role_id_row and gendarme_role_id_row['value']:
+        gendarme_role = interaction.guild.get_role(int(gendarme_role_id_row['value']))
+        if gendarme_role not in interaction.user.roles:
+            await interaction.response.send_message("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
+            return
+    else:
+        # Si le rôle n'est pas configuré, on envoie un avertissement (ou on bloque)
+        await interaction.response.send_message("⚠️ Le rôle Gendarme n'est pas configuré. Veuillez contacter un administrateur.", ephemeral=True)
+        return
+
     conn = sqlite3.connect('gendarmerie.db')
     cursor = conn.cursor()
     cursor.execute(
@@ -169,6 +223,50 @@ async def creer_casier(interaction: discord.Interaction, prenom: str, nom: str, 
     embed.set_footer(text=f"Casier créé par {interaction.user.display_name}")
 
     await interaction.response.send_message(embed=embed)
+
+@casier_group.command(name="rechercher", description="Recherche un casier judiciaire par nom.")
+@app_commands.describe(nom="Le nom de la personne à rechercher.")
+async def rechercher_casier(interaction: discord.Interaction, nom: str):
+    # --- Vérification du rôle Gendarme (identique à la création) ---
+    conn_check = get_db_connection()
+    gendarme_role_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'gendarme_role_id'").fetchone()
+    casier_log_channel_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'casier_log_channel_id'").fetchone()
+    conn_check.close()
+
+    if gendarme_role_id_row and gendarme_role_id_row['value']:
+        gendarme_role = interaction.guild.get_role(int(gendarme_role_id_row['value']))
+        if gendarme_role not in interaction.user.roles:
+            await interaction.response.send_message("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
+            return
+    else:
+        await interaction.response.send_message("⚠️ Le rôle Gendarme n'est pas configuré.", ephemeral=True)
+        return
+
+    # --- Recherche dans la base de données ---
+    conn = get_db_connection()
+    casiers = conn.execute("SELECT * FROM casiers WHERE nom LIKE ?", (f'%{nom}%',)).fetchall()
+    conn.close()
+
+    if not casiers:
+        await interaction.response.send_message(f"Aucun casier trouvé pour le nom `{nom}`.", ephemeral=True)
+        return
+
+    # --- Envoi des résultats dans le salon configuré ---
+    if casier_log_channel_id_row and casier_log_channel_id_row['value']:
+        log_channel = bot.get_channel(int(casier_log_channel_id_row['value']))
+        if log_channel:
+            await interaction.response.send_message(f"✅ Les résultats de la recherche ont été envoyés dans {log_channel.mention}.", ephemeral=True)
+            for casier in casiers:
+                embed = discord.Embed(title=f"Résultat de recherche : {casier['prenom']} {casier['nom']}", color=discord.Color.blue())
+                embed.add_field(name="ID Casier", value=casier['id'], inline=True)
+                embed.add_field(name="Date des faits", value=casier['date_faits'], inline=True)
+                embed.add_field(name="Statut", value=casier['statut_judiciaire'], inline=True)
+                embed.add_field(name="Infractions", value=casier['infractions'], inline=False)
+                await log_channel.send(embed=embed)
+        else:
+            await interaction.response.send_message("❌ Le salon de logs configuré est introuvable.", ephemeral=True)
+    else:
+        await interaction.response.send_message("⚠️ Le salon pour afficher les casiers n'est pas configuré.", ephemeral=True)
 
 # Commande pour faire appel
 @casier_group.command(name="appel", description="Faire une demande d'appel pour supprimer un casier.")

@@ -10,10 +10,18 @@
         th, td { padding: 10px; border: 1px solid #444; text-align: left; }
         th { background: #2c2f33; }
         .status-pending { color: orange; font-weight: bold; }
+        .nav-link { color: #7289da; }
     </style>
 </head>
 <body>
-    <h1>Dashboard Gendarmerie</h1>
+    <div class="container-fluid">
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <h1>Dashboard Gendarmerie</h1>
+            <div>
+                <a href="{{ url_for('config') }}" class="nav-link">Configuration</a>
+                <a href="{{ url_for('logout') }}" class="nav-link">Déconnexion</a>
+            </div>
+        </div>
 
     <h2>Casiers Judiciaires</h2>
     <table>
@@ -58,5 +66,6 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </body>
 </html>
