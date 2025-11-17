@@ -4,12 +4,46 @@ from discord import app_commands
 import sqlite3
 import os
 from datetime import datetime
+import threading
+from flask import Flask, render_template, request, redirect, url_for
+import asyncio
 
 # --- Configuration ---
 # Remplace par ton vrai token dans un fichier de configuration ou une variable d'environnement
 # Ne jamais écrire le token directement dans le code !
 BOT_TOKEN = "TON_TOKEN_DISCORD_ICI" 
 GUILD_ID = 123456789012345678 # ID de ton serveur Discord (clic droit sur le serveur > Copier l'ID)
+
+# --- Configuration du Dashboard Web ---
+app = Flask(__name__)
+
+# Pour simplifier, pas de système de login complexe ici.
+# Dans un vrai projet, il faudrait un système d'authentification sécurisé (ex: Flask-Login).
+ADMIN_PASSWORD = "motdepassesupersecret" 
+
+def get_db_connection():
+    conn = sqlite3.connect('gendarmerie.db')
+    conn.row_factory = sqlite3.Row # Permet d'accéder aux colonnes par leur nom
+    return conn
+
+@app.route('/')
+def index():
+    conn = get_db_connection()
+    casiers = conn.execute('SELECT * FROM casiers ORDER BY id DESC').fetchall()
+    gendarmes = conn.execute('SELECT * FROM gendarmes').fetchall()
+    conn.close()
+    return render_template('index.html', casiers=casiers, gendarmes=gendarmes)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    # Ceci est une sécurité très basique, à ne PAS utiliser en production !
+    if request.method == 'POST':
+        if request.form.get('password') == ADMIN_PASSWORD:
+            # Dans une vraie app, on utiliserait une session
+            return redirect(url_for('index'))
+        else:
+            return "Mot de passe incorrect", 403
+    return render_template('login.html')
 
 # --- Initialisation de la base de données ---
 def init_db():
@@ -158,5 +192,24 @@ async def appel_casier(interaction: discord.Interaction, id_casier: int):
 
 bot.tree.add_command(casier_group, guild=discord.Object(id=GUILD_ID))
 
-# --- Lancement du bot ---
-bot.run(BOT_TOKEN)
+# --- Lancement du Bot et du Dashboard ---
+
+def run_flask():
+    # Lance le serveur Flask. `debug=False` est important quand on utilise le threading.
+    app.run(host='0.0.0.0', port=30137, debug=False)
+
+async def main():
+    # Crée et démarre le thread pour le dashboard
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    print("Dashboard web démarré en arrière-plan sur le port 30137.")
+    
+    # Démarre le bot Discord
+    await bot.start(BOT_TOKEN)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Arrêt du bot et du serveur.")
