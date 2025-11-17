@@ -60,6 +60,8 @@ def config():
         nigend_log_id = request.form.get('nigend_log_id')
         appel_log_id = request.form.get('appel_log_id')
         specialite_log_id = request.form.get('specialite_log_id')
+        nigend_list_log_id = request.form.get('nigend_list_log_id')
+        specialite_view_log_id = request.form.get('specialite_view_log_id')
         
         cursor = conn.cursor()
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('gendarme_role_id', gendarme_role_id))
@@ -68,6 +70,8 @@ def config():
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('nigend_log_id', nigend_log_id))
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('appel_log_id', appel_log_id))
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('specialite_log_id', specialite_log_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('nigend_list_log_id', nigend_list_log_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('specialite_view_log_id', specialite_view_log_id))
         conn.commit()
         flash("Configuration enregistrée avec succès !", "success")
         return redirect(url_for('config'))
@@ -203,6 +207,64 @@ async def supprimer_nigend(interaction: discord.Interaction, membre: discord.Mem
     else:
         await interaction.response.send_message(f"{membre.mention} n'a pas de NIGEND enregistré.", ephemeral=True)
     conn.close()
+
+@nigend_group.command(name="lister", description="Affiche la liste de tous les gendarmes avec leur NIGEND et spécialités.")
+async def lister_nigend(interaction: discord.Interaction):
+    # --- Vérification du rôle Gendarme ---
+    conn_check = get_db_connection()
+    gendarme_role_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'gendarme_role_id'").fetchone()
+    nigend_list_log_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'nigend_list_log_id'").fetchone()
+    conn_check.close()
+
+    if gendarme_role_id_row and gendarme_role_id_row['value']:
+        gendarme_role = interaction.guild.get_role(int(gendarme_role_id_row['value']))
+        if gendarme_role not in interaction.user.roles:
+            await interaction.response.send_message("❌ Vous n'avez pas la permission d'utiliser cette commande.", ephemeral=True)
+            return
+    else:
+        await interaction.response.send_message("⚠️ Le rôle Gendarme n'est pas configuré. Veuillez contacter un administrateur.", ephemeral=True)
+        return
+
+    conn = get_db_connection()
+    gendarmes = conn.execute("SELECT user_id, nigend, specialites FROM gendarmes").fetchall()
+    conn.close()
+
+    if not gendarmes:
+        await interaction.response.send_message("Aucun gendarme n'est enregistré pour le moment.", ephemeral=True)
+        return
+
+    # --- Envoi des résultats dans le salon configuré ---
+    if nigend_list_log_id_row and nigend_list_log_id_row['value']:
+        log_channel = bot.get_channel(int(nigend_list_log_id_row['value']))
+        if log_channel:
+            embed = discord.Embed(
+                title="👮‍♂️ Liste des Gendarmes Enregistrés",
+                description=f"{len(gendarmes)} gendarme(s) trouvé(s).",
+                color=discord.Color.dark_blue()
+            )
+            
+            for gendarme in gendarmes:
+                member = interaction.guild.get_member(gendarme['user_id'])
+                member_name = member.display_name if member else f"ID Discord: {gendarme['user_id']}"
+                
+                specialites_str = gendarme['specialites'] if gendarme['specialites'] else "Aucune"
+                
+                field_value = (
+                    f"**NIGEND:** `{gendarme['nigend']}`\n"
+                    f"**Spécialités:** {specialites_str}"
+                )
+                embed.add_field(name=f"{member_name}", value=field_value, inline=False)
+            
+            embed.set_footer(text=f"Demande effectuée par {interaction.user.display_name}")
+            await interaction.response.send_message(f"✅ La liste des gendarmes a été envoyée dans {log_channel.mention}.", ephemeral=True)
+            await log_channel.send(embed=embed)
+        else:
+            await interaction.response.send_message("❌ Le salon de log pour la liste des NIGENDs est introuvable.", ephemeral=True)
+    else:
+        await interaction.response.send_message("⚠️ Le salon de log pour la liste des NIGENDs n'est pas configuré.", ephemeral=True)
+
+
+
 
 # Ajoute le groupe de commandes au bot
 bot.tree.add_command(nigend_group, guild=discord.Object(id=GUILD_ID))
