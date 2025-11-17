@@ -395,14 +395,24 @@ async def rechercher_casier(interaction: discord.Interaction, nom: str):
     if casier_search_log_id_row and casier_search_log_id_row['value']:
         log_channel = bot.get_channel(int(casier_search_log_id_row['value']))
         if log_channel:
-            await interaction.response.send_message(f"✅ Les résultats de la recherche ont été envoyés dans {log_channel.mention}.", ephemeral=True)
+            # On crée un seul embed pour tous les résultats
+            embed = discord.Embed(
+                title=f"Résultats de la recherche pour \"{nom}\"",
+                description=f"{len(casiers)} casier(s) trouvé(s).",
+                color=discord.Color.blue()
+            )
+            
+            # On ajoute chaque casier comme un champ dans l'embed
             for casier in casiers:
-                embed = discord.Embed(title=f"Résultat de recherche : {casier['prenom']} {casier['nom']}", color=discord.Color.blue())
-                embed.add_field(name="ID Casier", value=casier['id'], inline=True)
-                embed.add_field(name="Date des faits", value=casier['date_faits'], inline=True)
-                embed.add_field(name="Statut", value=casier['statut_judiciaire'], inline=True)
-                embed.add_field(name="Infractions", value=casier['infractions'], inline=False)
-                await log_channel.send(embed=embed)
+                field_name = f"ID: {casier['id']} - {casier['prenom']} {casier['nom']}"
+                field_value = (
+                    f"**Infractions:** {casier['infractions']}\n"
+                    f"**Date des faits:** {casier['date_faits']} | **Statut:** {casier['statut_judiciaire']}"
+                )
+                embed.add_field(name=field_name, value=field_value, inline=False)
+
+            await interaction.response.send_message(f"✅ Les résultats de la recherche ont été envoyés dans {log_channel.mention}.", ephemeral=True)
+            await log_channel.send(embed=embed)
         else:
             await interaction.response.send_message("❌ Le salon de logs configuré est introuvable.", ephemeral=True)
     else:
