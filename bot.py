@@ -55,11 +55,17 @@ def config():
     if request.method == 'POST':
         # Enregistre les nouvelles valeurs
         gendarme_role_id = request.form.get('gendarme_role_id')
-        casier_log_channel_id = request.form.get('casier_log_channel_id')
+        casier_search_log_id = request.form.get('casier_search_log_id')
+        casier_creation_log_id = request.form.get('casier_creation_log_id')
+        nigend_log_id = request.form.get('nigend_log_id')
+        appel_log_id = request.form.get('appel_log_id')
         
         cursor = conn.cursor()
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('gendarme_role_id', gendarme_role_id))
-        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('casier_log_channel_id', casier_log_channel_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('casier_search_log_id', casier_search_log_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('casier_creation_log_id', casier_creation_log_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('nigend_log_id', nigend_log_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('appel_log_id', appel_log_id))
         conn.commit()
         flash("Configuration enregistrée avec succès !", "success")
         return redirect(url_for('config'))
@@ -156,13 +162,29 @@ nigend_group = app_commands.Group(name="nigend", description="Gestion des NIGEND
 @app_commands.checks.has_permissions(administrator=True) # Seuls les admins peuvent faire ça
 async def creer_nigend(interaction: discord.Interaction, membre: discord.Member, nigend: str):
     conn = sqlite3.connect('gendarmerie.db')
-    cursor = conn.cursor()
     try:
+        cursor = conn.cursor()
         cursor.execute("INSERT INTO gendarmes (user_id, nigend) VALUES (?, ?)", (membre.id, nigend))
         conn.commit()
+
+        # Log de la création du NIGEND
+        nigend_log_id_row = cursor.execute("SELECT value FROM config WHERE key = 'nigend_log_id'").fetchone()
+        if nigend_log_id_row and nigend_log_id_row[0]:
+            log_channel = bot.get_channel(int(nigend_log_id_row[0]))
+            if log_channel:
+                embed = discord.Embed(
+                    title="✅ Nouveau NIGEND Attribué",
+                    description=f"Le NIGEND `{nigend}` a été attribué à {membre.mention}.",
+                    color=discord.Color.blue()
+                )
+                embed.set_footer(text=f"Opération effectuée par {interaction.user.display_name}")
+                await log_channel.send(embed=embed)
+
         await interaction.response.send_message(f"Le NIGEND `{nigend}` a été créé et attribué à {membre.mention}.", ephemeral=True)
+
     except sqlite3.IntegrityError:
         await interaction.response.send_message(f"Erreur : Ce membre ou ce NIGEND existe déjà.", ephemeral=True)
+    
     finally:
         conn.close()
 
@@ -183,6 +205,67 @@ async def supprimer_nigend(interaction: discord.Interaction, membre: discord.Mem
 # Ajoute le groupe de commandes au bot
 bot.tree.add_command(nigend_group, guild=discord.Object(id=GUILD_ID))
 
+# Groupe de commandes pour les spécialités
+specialite_group = app_commands.Group(name="specialite", description="Gestion des spécialités des gendarmes.")
+
+@specialite_group.command(name="ajouter", description="Ajoute une spécialité à un gendarme.")
+@app_commands.describe(membre="Le gendarme à qui ajouter la spécialité.", specialite="La spécialité à ajouter (ex: BAC, PSIG).")
+@app_commands.checks.has_permissions(administrator=True)
+async def ajouter_specialite(interaction: discord.Interaction, membre: discord.Member, specialite: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Vérifier si le gendarme existe
+    gendarme = cursor.execute("SELECT specialites FROM gendarmes WHERE user_id = ?", (membre.id,)).fetchone()
+
+    if not gendarme:
+        await interaction.response.send_message(f"❌ {membre.mention} n'est pas enregistré comme gendarme. Créez d'abord son NIGEND.", ephemeral=True)
+        conn.close()
+        return
+
+    current_specialites_str = gendarme['specialites'] or ""
+    specialites_list = [s.strip() for s in current_specialites_str.split(',') if s.strip()]
+
+    if specialite.lower() in [s.lower() for s in specialites_list]:
+        await interaction.response.send_message(f"ℹ️ {membre.mention} possède déjà la spécialité `{specialite}`.", ephemeral=True)
+    else:
+        specialites_list.append(specialite)
+        new_specialites_str = ", ".join(specialites_list)
+        cursor.execute("UPDATE gendarmes SET specialites = ? WHERE user_id = ?", (new_specialites_str, membre.id))
+        conn.commit()
+        await interaction.response.send_message(f"✅ La spécialité `{specialite}` a été ajoutée à {membre.mention}.", ephemeral=True)
+
+    conn.close()
+
+@specialite_group.command(name="supprimer", description="Supprime une spécialité d'un gendarme.")
+@app_commands.describe(membre="Le gendarme de qui retirer la spécialité.", specialite="La spécialité à retirer.")
+@app_commands.checks.has_permissions(administrator=True)
+async def supprimer_specialite(interaction: discord.Interaction, membre: discord.Member, specialite: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    gendarme = cursor.execute("SELECT specialites FROM gendarmes WHERE user_id = ?", (membre.id,)).fetchone()
+
+    if not gendarme or not gendarme['specialites']:
+        await interaction.response.send_message(f"❌ {membre.mention} n'a aucune spécialité à retirer.", ephemeral=True)
+        conn.close()
+        return
+
+    specialites_list = [s.strip() for s in gendarme['specialites'].split(',') if s.strip()]
+    
+    if specialite.lower() in [s.lower() for s in specialites_list]:
+        # Recrée la liste sans la spécialité à supprimer (insensible à la casse)
+        specialites_list = [s for s in specialites_list if s.lower() != specialite.lower()]
+        new_specialites_str = ", ".join(specialites_list)
+        cursor.execute("UPDATE gendarmes SET specialites = ? WHERE user_id = ?", (new_specialites_str, membre.id))
+        conn.commit()
+        await interaction.response.send_message(f"✅ La spécialité `{specialite}` a été retirée de {membre.mention}.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"ℹ️ {membre.mention} ne possède pas la spécialité `{specialite}`.", ephemeral=True)
+    
+    conn.close()
+
+bot.tree.add_command(specialite_group, guild=discord.Object(id=GUILD_ID))
 
 # Groupe de commandes pour le casier judiciaire
 casier_group = app_commands.Group(name="casier", description="Gestion des casiers judiciaires.")
@@ -233,7 +316,21 @@ async def creer_casier(interaction: discord.Interaction, prenom: str, nom: str, 
     embed.add_field(name="Infractions", value=infractions, inline=False)
     embed.set_footer(text=f"Casier créé par {interaction.user.display_name}")
 
-    await interaction.response.send_message(embed=embed)
+    # --- Envoi du log de création ---
+    conn_log = get_db_connection()
+    casier_creation_log_id_row = conn_log.execute("SELECT value FROM config WHERE key = 'casier_creation_log_id'").fetchone()
+    conn_log.close()
+
+    if casier_creation_log_id_row and casier_creation_log_id_row['value']:
+        log_channel = bot.get_channel(int(casier_creation_log_id_row['value']))
+        if log_channel:
+            await log_channel.send(embed=embed)
+            await interaction.response.send_message(f"✅ Casier créé avec succès et enregistré dans {log_channel.mention}.", ephemeral=True)
+        else:
+            await interaction.response.send_message("✅ Casier créé, mais le salon de log est introuvable.", ephemeral=True)
+    else:
+        # Comportement par défaut si aucun salon de log n'est configuré
+        await interaction.response.send_message(embed=embed)
 
 @casier_group.command(name="rechercher", description="Recherche un casier judiciaire par nom.")
 @app_commands.describe(nom="Le nom de la personne à rechercher.")
@@ -241,7 +338,7 @@ async def rechercher_casier(interaction: discord.Interaction, nom: str):
     # --- Vérification du rôle Gendarme (identique à la création) ---
     conn_check = get_db_connection()
     gendarme_role_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'gendarme_role_id'").fetchone()
-    casier_log_channel_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'casier_log_channel_id'").fetchone()
+    casier_search_log_id_row = conn_check.execute("SELECT value FROM config WHERE key = 'casier_search_log_id'").fetchone()
     conn_check.close()
 
     if gendarme_role_id_row and gendarme_role_id_row['value']:
@@ -263,8 +360,8 @@ async def rechercher_casier(interaction: discord.Interaction, nom: str):
         return
 
     # --- Envoi des résultats dans le salon configuré ---
-    if casier_log_channel_id_row and casier_log_channel_id_row['value']:
-        log_channel = bot.get_channel(int(casier_log_channel_id_row['value']))
+    if casier_search_log_id_row and casier_search_log_id_row['value']:
+        log_channel = bot.get_channel(int(casier_search_log_id_row['value']))
         if log_channel:
             await interaction.response.send_message(f"✅ Les résultats de la recherche ont été envoyés dans {log_channel.mention}.", ephemeral=True)
             for casier in casiers:
@@ -300,6 +397,7 @@ async def appel_casier(interaction: discord.Interaction, id_casier: int):
 
 
 bot.tree.add_command(casier_group, guild=discord.Object(id=GUILD_ID))
+
 
 # --- Lancement du Bot et du Dashboard ---
 

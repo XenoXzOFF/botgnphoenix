@@ -45,9 +45,24 @@
                         <small class="form-text text-muted">Ce rôle aura la permission d'utiliser les commandes de casier.</small>
                     </div>
                     <div class="form-group">
-                        <label for="casier_log_channel_id">ID du Salon d'affichage des casiers</label>
-                        <input type="text" class="form-control" id="casier_log_channel_id" name="casier_log_channel_id" placeholder="ID du salon où afficher les résultats de recherche" value="{{ config.get('casier_log_channel_id', '') }}">
+                        <label for="casier_search_log_id">ID du Salon de recherche des casiers</label>
+                        <input type="text" class="form-control" id="casier_search_log_id" name="casier_search_log_id" placeholder="ID du salon où afficher les résultats de recherche" value="{{ config.get('casier_search_log_id', '') }}">
                         <small class="form-text text-muted">Les résultats de `/casier rechercher` seront postés ici.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="casier_creation_log_id">ID du Salon des nouveaux casiers</label>
+                        <input type="text" class="form-control" id="casier_creation_log_id" name="casier_creation_log_id" placeholder="ID du salon où logger la création des casiers" value="{{ config.get('casier_creation_log_id', '') }}">
+                        <small class="form-text text-muted">Un embed sera envoyé ici à chaque `/casier creer`.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="nigend_log_id">ID du Salon des nouveaux NIGEND</label>
+                        <input type="text" class="form-control" id="nigend_log_id" name="nigend_log_id" placeholder="ID du salon où logger la création des NIGEND" value="{{ config.get('nigend_log_id', '') }}">
+                        <small class="form-text text-muted">Un embed sera envoyé ici à chaque `/nigend creer`.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="appel_log_id">ID du Salon de gestion des appels</label>
+                        <input type="text" class="form-control" id="appel_log_id" name="appel_log_id" placeholder="ID du salon où logger les décisions d'appel" value="{{ config.get('appel_log_id', '') }}">
+                        <small class="form-text text-muted">Les décisions de `/casier gerer_appel` seront loggées ici.</small>
                     </div>
                     <button type="submit" class="btn btn-primary">Enregistrer</button>
                 </form>
