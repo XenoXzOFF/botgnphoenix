@@ -64,6 +64,11 @@
                         <input type="text" class="form-control" id="appel_log_id" name="appel_log_id" placeholder="ID du salon où logger les décisions d'appel" value="{{ config.get('appel_log_id', '') }}">
                         <small class="form-text text-muted">Les décisions de `/casier gerer_appel` seront loggées ici.</small>
                     </div>
+                    <div class="form-group">
+                        <label for="specialite_log_id">ID du Salon de gestion des spécialités</label>
+                        <input type="text" class="form-control" id="specialite_log_id" name="specialite_log_id" placeholder="ID du salon où logger les changements de spécialités" value="{{ config.get('specialite_log_id', '') }}">
+                        <small class="form-text text-muted">Les ajouts/suppressions de spécialités seront loggés ici.</small>
+                    </div>
                     <button type="submit" class="btn btn-primary">Enregistrer</button>
                 </form>
             </div>

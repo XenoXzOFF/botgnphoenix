@@ -59,6 +59,7 @@ def config():
         casier_creation_log_id = request.form.get('casier_creation_log_id')
         nigend_log_id = request.form.get('nigend_log_id')
         appel_log_id = request.form.get('appel_log_id')
+        specialite_log_id = request.form.get('specialite_log_id')
         
         cursor = conn.cursor()
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('gendarme_role_id', gendarme_role_id))
@@ -66,6 +67,7 @@ def config():
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('casier_creation_log_id', casier_creation_log_id))
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('nigend_log_id', nigend_log_id))
         cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('appel_log_id', appel_log_id))
+        cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", ('specialite_log_id', specialite_log_id))
         conn.commit()
         flash("Configuration enregistrée avec succès !", "success")
         return redirect(url_for('config'))
@@ -233,7 +235,23 @@ async def ajouter_specialite(interaction: discord.Interaction, membre: discord.M
         new_specialites_str = ", ".join(specialites_list)
         cursor.execute("UPDATE gendarmes SET specialites = ? WHERE user_id = ?", (new_specialites_str, membre.id))
         conn.commit()
+
+        # Log de l'ajout de spécialité
+        specialite_log_id_row = cursor.execute("SELECT value FROM config WHERE key = 'specialite_log_id'").fetchone()
+        if specialite_log_id_row and specialite_log_id_row[0]:
+            log_channel = bot.get_channel(int(specialite_log_id_row[0]))
+            if log_channel:
+                embed = discord.Embed(
+                    title="🎓 Spécialité Ajoutée",
+                    description=f"La spécialité `{specialite}` a été ajoutée à {membre.mention}.",
+                    color=discord.Color.green()
+                )
+                embed.set_footer(text=f"Opération effectuée par {interaction.user.display_name}")
+                await log_channel.send(embed=embed)
+        
         await interaction.response.send_message(f"✅ La spécialité `{specialite}` a été ajoutée à {membre.mention}.", ephemeral=True)
+
+
 
     conn.close()
 
@@ -259,7 +277,21 @@ async def supprimer_specialite(interaction: discord.Interaction, membre: discord
         new_specialites_str = ", ".join(specialites_list)
         cursor.execute("UPDATE gendarmes SET specialites = ? WHERE user_id = ?", (new_specialites_str, membre.id))
         conn.commit()
+
+        # Log de la suppression de spécialité
+        specialite_log_id_row = cursor.execute("SELECT value FROM config WHERE key = 'specialite_log_id'").fetchone()
+        if specialite_log_id_row and specialite_log_id_row[0]:
+            log_channel = bot.get_channel(int(specialite_log_id_row[0]))
+            if log_channel:
+                embed = discord.Embed(
+                    title="🎓 Spécialité Retirée",
+                    description=f"La spécialité `{specialite}` a été retirée de {membre.mention}.",
+                    color=discord.Color.orange()
+                )
+                embed.set_footer(text=f"Opération effectuée par {interaction.user.display_name}")
+                await log_channel.send(embed=embed)
         await interaction.response.send_message(f"✅ La spécialité `{specialite}` a été retirée de {membre.mention}.", ephemeral=True)
+
     else:
         await interaction.response.send_message(f"ℹ️ {membre.mention} ne possède pas la spécialité `{specialite}`.", ephemeral=True)
     
