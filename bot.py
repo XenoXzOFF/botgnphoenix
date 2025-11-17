@@ -7,6 +7,7 @@ from datetime import datetime
 import threading
 from flask import Flask, render_template, request, redirect, url_for
 import asyncio
+from functools import wraps
 from flask import session, flash
 
 # --- Configuration ---
@@ -22,6 +23,16 @@ app.secret_key = os.urandom(24) # Clé secrète pour la gestion des sessions
 # Pour simplifier, pas de système de login complexe ici.
 # Dans un vrai projet, il faudrait un système d'authentification sécurisé (ex: Flask-Login).
 ADMIN_PASSWORD = "motdepassesupersecret" 
+
+# --- Décorateur pour vérifier si l'utilisateur est connecté ---
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session:
+            flash("Veuillez vous connecter pour accéder à cette page.", "warning")
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 def get_db_connection():
     conn = sqlite3.connect('gendarmerie.db')
