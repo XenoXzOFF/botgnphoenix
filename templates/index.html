@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Gendarmerie</title>
+    <style>
+        body { font-family: sans-serif; background: #23272a; color: #fff; margin: 20px; }
+        h1, h2 { color: #7289da; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; border: 1px solid #444; text-align: left; }
+        th { background: #2c2f33; }
+        .status-pending { color: orange; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Dashboard Gendarmerie</h1>
+
+    <h2>Casiers Judiciaires</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Identité</th>
+                <th>Date Faits</th>
+                <th>Infractions</th>
+                <th>Statut Appel</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for casier in casiers %}
+            <tr>
+                <td>{{ casier['id'] }}</td>
+                <td>{{ casier['prenom'] }} {{ casier['nom'] }}</td>
+                <td>{{ casier['date_faits'] }}</td>
+                <td>{{ casier['infractions'] }}</td>
+                <td class="{{ 'status-pending' if casier['appel_status'] == 'En attente' else '' }}">
+                    {{ casier['appel_status'] }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Gendarmes (NIGEND)</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>User ID Discord</th>
+                <th>NIGEND</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for gendarme in gendarmes %}
+            <tr>
+                <td>{{ gendarme['user_id'] }}</td>
+                <td>{{ gendarme['nigend'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
